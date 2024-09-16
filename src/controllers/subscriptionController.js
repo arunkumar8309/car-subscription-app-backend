@@ -1,7 +1,6 @@
 const Subscription = require('../models/Subscription');
 
 // Create a new subscription
-// Create a new subscription
 const createSubscription = async (req, res) => {
   const { carType, planType, startDate, timeSlot } = req.body;
 
@@ -9,99 +8,87 @@ const createSubscription = async (req, res) => {
   const schedule = [];
   let currentDate = new Date(startDate);
 
-  // Helper function to add a schedule entry
+  // Helper function to add a schedule entry if it doesn't already exist
   const addScheduleEntry = (date, type) => {
-    schedule.push({ date: new Date(date), type });
+    const existingEntry = schedule.find(entry => entry.date.toDateString() === date.toDateString());
+    if (!existingEntry) {
+      schedule.push({ date: new Date(date), type });
+    }
   };
 
-  if (planType === 'Daily') {
-    let serviceDays = 0;
-    let exteriorCount = 0;
-    let interiorCount = 0;
+  let totalCleanings = 0; // To track the total number of cleanings
+  let exteriorCount = 0; // Counter to track the number of Exterior Cleanings
 
-    for (let i = 0; i < 28; i++) {
+  // Ensure the first date is always Interior Cleaning
+  addScheduleEntry(currentDate, 'Interior Cleaning');
+  totalCleanings++;
+  currentDate.setDate(currentDate.getDate() + 1); // Move to next day
+
+  if (planType === 'Daily') {
+    // DAILY PLAN LOGIC
+    let serviceDays = 1; // Start count from the next day after the first Interior Cleaning
+
+    // Loop through 27 more days
+    for (let i = 1; i < 28; i++) {
       if (serviceDays === 6) {
         addScheduleEntry(currentDate, 'Off Day');
-        serviceDays = 0;
+        serviceDays = 0; // Reset after Off Day
       } else {
-        if (interiorCount === 0) {
+        if (totalCleanings % 12 === 0) {
+          // Schedule Interior Cleaning after every 12 cleanings
           addScheduleEntry(currentDate, 'Interior Cleaning');
-          interiorCount++;
         } else {
           addScheduleEntry(currentDate, 'Exterior Cleaning');
-          exteriorCount++;
         }
+        totalCleanings++;
         serviceDays++;
       }
-      currentDate.setDate(currentDate.getDate() + 1);
+      currentDate.setDate(currentDate.getDate() + 1); // Move to next day
     }
-
-    // Schedule the second interior cleaning after 12 exterior services
-    let exteriorServiceCount = 0;
-    schedule.forEach((entry) => {
-      if (entry.type === 'Exterior Cleaning') {
-        exteriorServiceCount++;
-        if (exteriorServiceCount === 12) {
-          const interiorDate = new Date(entry.date);
-          interiorDate.setDate(interiorDate.getDate() + 1);
-          if (schedule.length < 28) {  // Ensure we don't exceed 28 days
-            addScheduleEntry(interiorDate, 'Interior Cleaning');
-          }
-        }
-      }
-    });
 
   } else if (planType === 'Alternate') {
-    let serviceDays = 0;
-    let exteriorCount = 0;
-    let interiorCount = 0;
-    let totalServiceCount = 0;
-    let offDaysCount = 0;
+    // ALTERNATE PLAN LOGIC
+    let cleaningCount = 0; // Counter to track the number of cleanings
+    let nextInteriorCleaningDate = new Date(currentDate); // Track next Interior Cleaning date
 
-    for (let i = 0; i < 28; i++) {
-      if (serviceDays === 1 || offDaysCount === 2) {
+    for (let i = 1; i < 28; i++) {
+      if (i % 2 === 1) {
+        // Every other day is an Off Day
         addScheduleEntry(currentDate, 'Off Day');
-        offDaysCount++;
-        serviceDays = 0;
-        if (offDaysCount === 4) {
-          offDaysCount = 0; // Reset off days count after 2 consecutive off days
-        }
       } else {
-        if (interiorCount === 0) {
+        if (totalCleanings % 6 === 0 && totalCleanings !== 0) {
+          // Ensure Interior Cleaning is scheduled after 6 cleanings
+          // Add Off Day if needed before Interior Cleaning
+          while (currentDate < nextInteriorCleaningDate) {
+            addScheduleEntry(currentDate, 'Off Day');
+            currentDate.setDate(currentDate.getDate() + 1); // Move to next day
+          }
           addScheduleEntry(currentDate, 'Interior Cleaning');
-          interiorCount++;
+          nextInteriorCleaningDate = new Date(currentDate);
+          nextInteriorCleaningDate.setDate(nextInteriorCleaningDate.getDate() + 6); // Set next Interior Cleaning date
+          totalCleanings++;
         } else {
           addScheduleEntry(currentDate, 'Exterior Cleaning');
-          exteriorCount++;
-        }
-        totalServiceCount++;
-        serviceDays++;
-      }
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-
-    // Schedule the second interior cleaning after 6 total services
-    let serviceCount = 0;
-    schedule.forEach((entry) => {
-      if (entry.type === 'Exterior Cleaning' || entry.type === 'Interior Cleaning') {
-        serviceCount++;
-        if (serviceCount === 6 && interiorCount === 1) {
-          const interiorDate = new Date(entry.date);
-          interiorDate.setDate(interiorDate.getDate() + 1);
-          if (schedule.length < 28) {  // Ensure we don't exceed 28 days
-            addScheduleEntry(interiorDate, 'Interior Cleaning');
+          exteriorCount++; // Increment the Exterior Cleaning counter
+          if (exteriorCount === 2) {
+            // Add an extra Off Day after every 2 Exterior Cleanings
+            currentDate.setDate(currentDate.getDate() + 1); // Move to next day for Off Day
+            addScheduleEntry(currentDate, 'Off Day');
+            exteriorCount = 0; // Reset the counter
           }
+          totalCleanings++;
         }
       }
-    });
+      currentDate.setDate(currentDate.getDate() + 1); // Move to next day
+    }
   }
 
-  // Limit the schedule to exactly 28 days
+  // Ensure that the schedule does not exceed 28 days
   if (schedule.length > 28) {
     schedule.length = 28;
   }
 
-  // Save subscription to DB
+  // Save the subscription to the database
   const subscription = new Subscription({
     carType,
     planType,
@@ -112,7 +99,7 @@ const createSubscription = async (req, res) => {
 
   try {
     const savedSubscription = await subscription.save();
-    res.status(201).json(savedSubscription);
+    res.status(201).json(savedSubscription); // Keep response pattern as is
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -161,98 +148,99 @@ const updateSubscriptionById = async (req, res) => {
     const schedule = [];
     let currentDate = new Date(startDate);
 
-    // Helper function to add a schedule entry
+    // Helper function to add a schedule entry if it doesn't already exist
     const addScheduleEntry = (date, type) => {
-      schedule.push({ date: new Date(date), type });
+      const existingEntry = schedule.find(entry => entry.date.toDateString() === date.toDateString());
+      if (!existingEntry) {
+        schedule.push({ date: new Date(date), type });
+      }
     };
 
-    if (planType === 'Daily') {
-      let serviceDays = 0;
-      let exteriorCount = 0;
-      let interiorCount = 0;
+    let totalCleanings = 0; // To track the total number of cleanings
+    let exteriorCount = 0; // Counter to track the number of Exterior Cleanings
 
-      for (let i = 0; i < 28; i++) {
+    // Ensure the first date is always Interior Cleaning
+    addScheduleEntry(currentDate, 'Interior Cleaning');
+    totalCleanings++;
+    currentDate.setDate(currentDate.getDate() + 1); // Move to next day
+
+    if (planType === 'Daily') {
+      // DAILY PLAN LOGIC
+      let serviceDays = 1; // Start count from the next day after the first Interior Cleaning
+
+      // Loop through 27 more days
+      for (let i = 1; i < 28; i++) {
         if (serviceDays === 6) {
           addScheduleEntry(currentDate, 'Off Day');
-          serviceDays = 0;
+          serviceDays = 0; // Reset after Off Day
         } else {
-          if (interiorCount === 0) {
+          if (totalCleanings % 12 === 0 && totalCleanings !== 0) {
+            // Schedule Interior Cleaning after every 12 cleanings
             addScheduleEntry(currentDate, 'Interior Cleaning');
-            interiorCount++;
           } else {
             addScheduleEntry(currentDate, 'Exterior Cleaning');
             exteriorCount++;
-          }
-          serviceDays++;
-        }
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-
-      // Schedule the second interior cleaning after 12 exterior services
-      let exteriorServiceCount = 0;
-      schedule.forEach((entry) => {
-        if (entry.type === 'Exterior Cleaning') {
-          exteriorServiceCount++;
-          if (exteriorServiceCount === 12) {
-            const interiorDate = new Date(entry.date);
-            interiorDate.setDate(interiorDate.getDate() + 1);
-            if (!schedule.some(e => e.date.getTime() === interiorDate.getTime() && e.type === 'Interior Cleaning')) {
-              if (schedule.length < 28) {  // Ensure we don't exceed 28 days
+            if (exteriorCount === 12) {
+              const interiorDate = new Date(currentDate);
+              interiorDate.setDate(interiorDate.getDate() + 1);
+              if (!schedule.some(e => e.date.toDateString() === interiorDate.toDateString() && e.type === 'Interior Cleaning')) {
                 addScheduleEntry(interiorDate, 'Interior Cleaning');
               }
             }
           }
-        }
-      });
-
-    } else if (planType === 'Alternate') {
-      let serviceDays = 0;
-      let exteriorCount = 0;
-      let interiorCount = 0;
-      let totalServiceCount = 0;
-      let offDaysCount = 0;
-
-      for (let i = 0; i < 28; i++) {
-        if (serviceDays === 1 || offDaysCount === 2) {
-          addScheduleEntry(currentDate, 'Off Day');
-          offDaysCount++;
-          serviceDays = 0;
-          if (offDaysCount === 4) {
-            offDaysCount = 0; // Reset off days count after 2 consecutive off days
-          }
-        } else {
-          if (interiorCount === 0) {
-            addScheduleEntry(currentDate, 'Interior Cleaning');
-            interiorCount++;
-          } else {
-            addScheduleEntry(currentDate, 'Exterior Cleaning');
-            exteriorCount++;
-          }
-          totalServiceCount++;
+          totalCleanings++;
           serviceDays++;
         }
-        currentDate.setDate(currentDate.getDate() + 1);
+        currentDate.setDate(currentDate.getDate() + 1); // Move to next day
+      }
+
+    } else if (planType === 'Alternate') {
+      // ALTERNATE PLAN LOGIC
+      let cleaningCount = 0; // Counter to track the number of cleanings
+      let nextInteriorCleaningDate = new Date(currentDate); // Track next Interior Cleaning date
+
+      for (let i = 1; i < 28; i++) {
+        if (i % 2 === 1) {
+          // Every other day is an Off Day
+          addScheduleEntry(currentDate, 'Off Day');
+        } else {
+          if (totalCleanings % 6 === 0 && totalCleanings !== 0) {
+            // Ensure Interior Cleaning is scheduled after 6 cleanings
+            // Add Off Day if needed before Interior Cleaning
+            while (currentDate < nextInteriorCleaningDate) {
+              addScheduleEntry(currentDate, 'Off Day');
+              currentDate.setDate(currentDate.getDate() + 1); // Move to next day
+            }
+            addScheduleEntry(currentDate, 'Interior Cleaning');
+            nextInteriorCleaningDate = new Date(currentDate);
+            nextInteriorCleaningDate.setDate(nextInteriorCleaningDate.getDate() + 6); // Set next Interior Cleaning date
+            totalCleanings++;
+          } else {
+            addScheduleEntry(currentDate, 'Exterior Cleaning');
+            exteriorCount++; // Increment the Exterior Cleaning counter
+            if (exteriorCount === 2) {
+              // Add an extra Off Day after every 2 Exterior Cleanings
+              currentDate.setDate(currentDate.getDate() + 1); // Move to next day for Off Day
+              addScheduleEntry(currentDate, 'Off Day');
+              exteriorCount = 0; // Reset the counter
+            }
+            totalCleanings++;
+          }
+        }
+        currentDate.setDate(currentDate.getDate() + 1); // Move to next day
       }
 
       // Schedule the second interior cleaning after 6 total services
-      let serviceCount = 0;
-      schedule.forEach((entry) => {
-        if (entry.type === 'Exterior Cleaning' || entry.type === 'Interior Cleaning') {
-          serviceCount++;
-          if (serviceCount === 6 && interiorCount === 1) {
-            const interiorDate = new Date(entry.date);
-            interiorDate.setDate(interiorDate.getDate() + 1);
-            if (!schedule.some(e => e.date.getTime() === interiorDate.getTime() && e.type === 'Interior Cleaning')) {
-              if (schedule.length < 28) {  // Ensure we don't exceed 28 days
-                addScheduleEntry(interiorDate, 'Interior Cleaning');
-              }
-            }
-          }
+      if (totalCleanings % 6 === 0) {
+        const interiorDate = new Date(currentDate);
+        interiorDate.setDate(interiorDate.getDate() + 1);
+        if (!schedule.some(e => e.date.toDateString() === interiorDate.toDateString() && e.type === 'Interior Cleaning')) {
+          addScheduleEntry(interiorDate, 'Interior Cleaning');
         }
-      });
+      }
     }
 
-    // Limit the schedule to exactly 28 days
+    // Ensure that the schedule does not exceed 28 days
     if (schedule.length > 28) {
       schedule.length = 28;
     }
@@ -272,8 +260,6 @@ const updateSubscriptionById = async (req, res) => {
     res.status(400).json({ message: error.message });
   }
 };
-
-
 
 // Delete a subscription by ID
 const deleteSubscriptionById = async (req, res) => {
