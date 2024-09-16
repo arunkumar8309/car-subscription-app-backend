@@ -1,6 +1,7 @@
 const Subscription = require('../models/Subscription');
 
 // Create a new subscription
+// Create a new subscription
 const createSubscription = async (req, res) => {
   const { carType, planType, startDate, timeSlot } = req.body;
 
@@ -54,16 +55,16 @@ const createSubscription = async (req, res) => {
     let serviceDays = 0;
     let exteriorCount = 0;
     let interiorCount = 0;
-    let offDays = 0;
     let totalServiceCount = 0;
+    let offDaysCount = 0;
 
     for (let i = 0; i < 28; i++) {
-      if (serviceDays === 1 || (totalServiceCount % 3 === 0 && offDays === 0)) {
+      if (serviceDays === 1 || offDaysCount === 2) {
         addScheduleEntry(currentDate, 'Off Day');
-        offDays++;
+        offDaysCount++;
         serviceDays = 0;
-        if (offDays === 2) {
-          offDays = 0;
+        if (offDaysCount === 4) {
+          offDaysCount = 0; // Reset off days count after 2 consecutive off days
         }
       } else {
         if (interiorCount === 0) {
@@ -79,7 +80,7 @@ const createSubscription = async (req, res) => {
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    // Schedule the second interior cleaning after 6 services
+    // Schedule the second interior cleaning after 6 total services
     let serviceCount = 0;
     schedule.forEach((entry) => {
       if (entry.type === 'Exterior Cleaning' || entry.type === 'Interior Cleaning') {
@@ -145,7 +146,6 @@ const getSubscriptionById = async (req, res) => {
 };
 
 // Update a subscription by ID
-// Update a subscription by ID
 const updateSubscriptionById = async (req, res) => {
   const { id } = req.params;
   const { carType, planType, startDate, timeSlot } = req.body;
@@ -196,8 +196,10 @@ const updateSubscriptionById = async (req, res) => {
           if (exteriorServiceCount === 12) {
             const interiorDate = new Date(entry.date);
             interiorDate.setDate(interiorDate.getDate() + 1);
-            if (schedule.length < 28) {  // Ensure we don't exceed 28 days
-              addScheduleEntry(interiorDate, 'Interior Cleaning');
+            if (!schedule.some(e => e.date.getTime() === interiorDate.getTime() && e.type === 'Interior Cleaning')) {
+              if (schedule.length < 28) {  // Ensure we don't exceed 28 days
+                addScheduleEntry(interiorDate, 'Interior Cleaning');
+              }
             }
           }
         }
@@ -207,16 +209,16 @@ const updateSubscriptionById = async (req, res) => {
       let serviceDays = 0;
       let exteriorCount = 0;
       let interiorCount = 0;
-      let offDays = 0;
       let totalServiceCount = 0;
+      let offDaysCount = 0;
 
       for (let i = 0; i < 28; i++) {
-        if (serviceDays === 1 || (totalServiceCount % 3 === 0 && offDays === 0)) {
+        if (serviceDays === 1 || offDaysCount === 2) {
           addScheduleEntry(currentDate, 'Off Day');
-          offDays++;
+          offDaysCount++;
           serviceDays = 0;
-          if (offDays === 2) {
-            offDays = 0;
+          if (offDaysCount === 4) {
+            offDaysCount = 0; // Reset off days count after 2 consecutive off days
           }
         } else {
           if (interiorCount === 0) {
@@ -232,7 +234,7 @@ const updateSubscriptionById = async (req, res) => {
         currentDate.setDate(currentDate.getDate() + 1);
       }
 
-      // Schedule the second interior cleaning after 6 services
+      // Schedule the second interior cleaning after 6 total services
       let serviceCount = 0;
       schedule.forEach((entry) => {
         if (entry.type === 'Exterior Cleaning' || entry.type === 'Interior Cleaning') {
@@ -240,8 +242,10 @@ const updateSubscriptionById = async (req, res) => {
           if (serviceCount === 6 && interiorCount === 1) {
             const interiorDate = new Date(entry.date);
             interiorDate.setDate(interiorDate.getDate() + 1);
-            if (schedule.length < 28) {  // Ensure we don't exceed 28 days
-              addScheduleEntry(interiorDate, 'Interior Cleaning');
+            if (!schedule.some(e => e.date.getTime() === interiorDate.getTime() && e.type === 'Interior Cleaning')) {
+              if (schedule.length < 28) {  // Ensure we don't exceed 28 days
+                addScheduleEntry(interiorDate, 'Interior Cleaning');
+              }
             }
           }
         }
@@ -268,6 +272,7 @@ const updateSubscriptionById = async (req, res) => {
     res.status(400).json({ message: error.message });
   }
 };
+
 
 
 // Delete a subscription by ID
